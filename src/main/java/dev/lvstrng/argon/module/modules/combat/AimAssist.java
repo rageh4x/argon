@@ -17,7 +17,7 @@ import net.minecraft.util.math.Vec3d;
 import org.lwjgl.glfw.GLFW;
 
 public final class AimAssist extends Module implements HudListener, MouseMoveListener {
-	private final BooleanSetting stickyAim = new BooleanSetting(EncryptedString.of("Sticky Aim"), false)
+	private final BooleanSetting stickyAim = new BooleanSetting(EncryptedString.of("Sticky Aim"), true)
 			.setDescription(EncryptedString.of("Aims at the last attacked player"));
 
 	private final BooleanSetting onlyWeapon = new BooleanSetting(EncryptedString.of("Only Weapon"), true);
@@ -64,6 +64,9 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
 	private boolean move;
 	private float pitch, yaw;
 
+	// Target Lock variable
+	private PlayerEntity lockedTarget = null;
+
 	@SuppressWarnings("unused")
 	public enum PosMode {
 		Normal, Lerped
@@ -91,6 +94,7 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
 		move = true;
 		pitch = pitchSpeed.getRandomValueFloat();
 		yaw = yawSpeed.getRandomValueFloat();
+		lockedTarget = null;
 
 		eventManager.add(HudListener.class, this);
 		eventManager.add(MouseMoveListener.class, this);
@@ -101,6 +105,7 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
 
 	@Override
 	public void onDisable() {
+		lockedTarget = null;
 		eventManager.remove(HudListener.class, this);
 		eventManager.remove(MouseMoveListener.class, this);
 		super.onDisable();
@@ -122,9 +127,18 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
 		if (onLeftClick.getValue() && GLFW.glfwGetMouseButton(mc.getWindow().getHandle(), GLFW.GLFW_MOUSE_BUTTON_LEFT) != GLFW.GLFW_PRESS)
 			return;
 
-		PlayerEntity target = WorldUtils.findNearestPlayer(mc.player, radius.getValueFloat(), seeOnly.getValue(), true);
-		if (stickyAim.getValue() && mc.player.getAttacking() instanceof PlayerEntity player && player.distanceTo(mc.player) < radius.getValue())
-			target = player;
+		// Target Lock Logic
+		if (lockedTarget != null && (!lockedTarget.isAlive() || lockedTarget.distanceTo(mc.player) > radius.getValue() || (seeOnly.getValue() && !mc.player.canSee(lockedTarget)))) {
+			lockedTarget = null;
+		}
+
+		PlayerEntity target = lockedTarget;
+		if (target == null) {
+			target = WorldUtils.findNearestPlayer(mc.player, radius.getValueFloat(), seeOnly.getValue(), true);
+			if (target != null) {
+				lockedTarget = target;
+			}
+		}
 
 		if (target == null)
 			return;
@@ -157,22 +171,22 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
 		float yawStrength = yaw / 50;
 		float pitchStrength = pitch / 50;
 
-		float yaw = mc.player.getYaw();
-		float pitch = mc.player.getPitch();
+		float currentYaw = mc.player.getYaw();
+		float currentPitch = mc.player.getPitch();
 
 		if (lerp.isMode(LerpMode.Smoothstep)) {
-			yaw = (float) smoothStepLerp(yawStrength, mc.player.getYaw(), (float) rotation.yaw());
-			pitch = (float) smoothStepLerp(pitchStrength, mc.player.getPitch(), (float) rotation.pitch());
+			currentYaw = (float) smoothStepLerp(yawStrength, mc.player.getYaw(), (float) rotation.yaw());
+			currentPitch = (float) smoothStepLerp(pitchStrength, mc.player.getPitch(), (float) rotation.pitch());
 		}
 
 		if (lerp.isMode(LerpMode.Normal)) {
-			yaw = lerp(yawStrength, mc.player.getYaw(), (float) (rotation.yaw()));
-			pitch = lerp(pitchStrength, mc.player.getPitch(), (float) (rotation.pitch()));
+			currentYaw = lerp(yawStrength, mc.player.getYaw(), (float) (rotation.yaw()));
+			currentPitch = lerp(pitchStrength, mc.player.getPitch(), (float) (rotation.pitch()));
 		}
 
 		if (lerp.isMode(LerpMode.EaseOut)) {
-			yaw = (float) easeOutBackDegrees(mc.player.getYaw(), rotation.yaw(), yawStrength * RenderUtils.frameDelta());
-			pitch = (float) easeOutBackDegrees(mc.player.getPitch(), rotation.pitch(), pitchStrength * RenderUtils.frameDelta());
+			currentYaw = (float) easeOutBackDegrees(mc.player.getYaw(), rotation.yaw(), yawStrength * RenderUtils.frameDelta());
+			currentPitch = (float) easeOutBackDegrees(mc.player.getPitch(), rotation.pitch(), pitchStrength * RenderUtils.frameDelta());
 		}
 
 		if (MathUtils.randomInt(1, 100) <= randomization.getValueInt()) {
@@ -181,14 +195,14 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
 					if(stopAtTargetHorizontal.getValue() && WorldUtils.getHitResult(radius.getValue()) instanceof EntityHitResult hitResult && hitResult.getEntity() == target)
 						return;
 
-					mc.player.setYaw(yaw);
+					mc.player.setYaw(currentYaw);
 				}
 
 				if (pitchAssist.getValue()) {
 					if(stopAtTargetVertical.getValue() && WorldUtils.getHitResult(radius.getValue()) instanceof EntityHitResult hitResult && hitResult.getEntity() == target)
 						return;
 
-					mc.player.setPitch(pitch);
+					mc.player.setPitch(currentPitch);
 				}
 			}
 		}
@@ -221,4 +235,4 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
 		move = false;
 		timer.reset();
 	}
-}
+			}
